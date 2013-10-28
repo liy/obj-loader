@@ -42,7 +42,7 @@ ObjFace.prototype.correction = function(vLookupSize, tLookupSize, nLookupSize){
   }
 }
 
-ObjFace.prototype.calculateNormal = function(vLookup, vertexNormals, smoothNormal){
+ObjFace.prototype.calculateNormal = function(vLookup, smoothNormals, smoothNormal){
   var m = vec3.fromValues(
     vLookup[this.vi[1]*3]   - vLookup[this.vi[0]*3],
     vLookup[this.vi[1]*3+1] - vLookup[this.vi[0]*3+1],
@@ -57,33 +57,32 @@ ObjFace.prototype.calculateNormal = function(vLookup, vertexNormals, smoothNorma
   if(smoothNormal){
     // accumulate the normals for every vertices on the face.
     for(var i=0; i<this.vi.length; ++i){
-      var vertexNormal = vertexNormals[this.vi[i]];
+      var vertexNormal = smoothNormals[this.vi[i]];
       if(vertexNormal)
-        vec3.add(vertexNormals[this.vi[i]], vertexNormal, this.normal);
+        vec3.add(smoothNormals[this.vi[i]], vertexNormal, this.normal);
       else
-        vertexNormals[this.vi[i]] = vec3.clone(this.normal);
+        smoothNormals[this.vi[i]] = vec3.clone(this.normal);
     }
   }
 }
 
 
 
+function ObjLoader(smoothNormal){
+  // default true
+  this.smoothNormal = (smoothNormal) ? smoothNormal : true;
+  console.log(this.smoothNormal);
+}
+var p = ObjLoader.prototype;
 
-
-
-
-function ObjLoader(path, callback){
-  this.path = path;
+p.load = function(path, callback){
   this.callback = callback;
-
-  this.smoothNormal = false;
 
   var xhr = new XMLHttpRequest();
   xhr.open('GET', path, true);
   xhr.onload = bind(this, this.onload);
   xhr.send();
 }
-var p = ObjLoader.prototype;
 
 p.onload = function(e){
   console.time('split');
@@ -116,9 +115,9 @@ p.onload = function(e){
   // this format of .obj file might not use same index sequence for vertex, texture and normals.
   var doIndexRearrangement = true;
 
-  // every time a face normal is generated, the normal will be added against corresponding vertex's _vertexNormals.
-  // When all the face normals generation completed, all the vertices's _vertexNormals will be normalized
-  vertexNormals = new Array();
+  // every time a face normal is generated, the normal will be added against corresponding vertex's smoothNormals.
+  // When all the face normals generation completed, all the vertices's smoothNormals will be normalized
+  var smoothNormals = new Array();
 
   len = lines.length;
   for(var i=0; i<len; ++i){
@@ -196,12 +195,12 @@ p.onload = function(e){
   if(!hasNormals){
     // calculate face normals
     for(i=0; i<len; ++i){
-      faces[i].calculateNormal(vLookup, vertexNormals, this.smoothNormal);
+      faces[i].calculateNormal(vLookup, smoothNormals, this.smoothNormal);
     }
     // normalize all the normals
-    for(i=0; i<vertexNormals.length; ++i){
-      if(vertexNormals[i])
-        vec3.normalize(vertexNormals[i], vertexNormals[i]);
+    for(i=0; i<smoothNormals.length; ++i){
+      if(smoothNormals[i])
+        vec3.normalize(smoothNormals[i], smoothNormals[i]);
     }
   }
 
@@ -214,6 +213,8 @@ p.onload = function(e){
           this.vertices.push(vLookup[ face.vi[j]*3+1 ]);
           this.vertices.push(vLookup[ face.vi[j]*3+2 ]);
 
+          // if has no normals defined, and the do not smooth generated normal,
+          // simply use the face's normal for every vertex.
           if(!hasNormals && !this.smoothNormal){
             this.normals.push(face.normal[0]);
             this.normals.push(face.normal[1]);
@@ -230,6 +231,7 @@ p.onload = function(e){
           this.texCoords.push(tLookup[ face.ti[j]*this.texCoordComponentSize+2 ]);
       }
 
+      // if no normals defined, this for loop will not execute.
       for(j=0; j<face.ni.length; ++j){
         this.normals.push(nLookup[ face.ni[j]*3 ]);
         this.normals.push(nLookup[ face.ni[j]*3+1 ]);
@@ -239,9 +241,9 @@ p.onload = function(e){
       // use calculated smoothed normals
       if(!hasNormals && this.smoothNormal){
         for(j=0; j<face.vi.length; ++j){
-          this.normals.push(vertexNormals[ face.vi[j] ][0]);
-          this.normals.push(vertexNormals[ face.vi[j] ][1]);
-          this.normals.push(vertexNormals[ face.vi[j] ][2]);
+          this.normals.push(smoothNormals[ face.vi[j] ][0]);
+          this.normals.push(smoothNormals[ face.vi[j] ][1]);
+          this.normals.push(smoothNormals[ face.vi[j] ][2]);
         }
       }
     }
@@ -255,17 +257,17 @@ p.onload = function(e){
     for(i=0; i<len; ++i){
       var face = faces[i];
       for(j=0; j<face.vi.length; ++j){
-        if(this.smoothNormal){
-          if(!hasNormals){
-            this.normals[ face.vi[j]*3 ] = vertexNormals[ face.vi[j] ][0];
-            this.normals[ face.vi[j]*3+1 ] = vertexNormals[ face.vi[j] ][1];
-            this.normals[ face.vi[j]*3+2 ] = vertexNormals[ face.vi[j] ][2];
+        if(!hasNormals){
+          if(this.smoothNormal){
+            this.normals[ face.vi[j]*3 ] = smoothNormals[ face.vi[j] ][0];
+            this.normals[ face.vi[j]*3+1 ] = smoothNormals[ face.vi[j] ][1];
+            this.normals[ face.vi[j]*3+2 ] = smoothNormals[ face.vi[j] ][2];
           }
-        }
-        else{
-          this.normals[ face.vi[j]*3 ] = face.normal[0];
+          else{
+            this.normals[ face.vi[j]*3 ] = face.normal[0];
             this.normals[ face.vi[j]*3+1 ] = face.normal[1];
             this.normals[ face.vi[j]*3+2 ] = face.normal[2];
+          }
         }
 
         // just use face definition's vertex index as OpenGL element index.
