@@ -6,6 +6,12 @@ function ObjFace(){
   this.normal = vec3.create();
 }
 
+/**
+ * Add index information to the face
+ * @param {[type]} vi [description]
+ * @param {[type]} ti [description]
+ * @param {[type]} ni [description]
+ */
 ObjFace.prototype.addIndices = function(vi, ti, ni){
   this.vi.push(vi);
 
@@ -18,6 +24,12 @@ ObjFace.prototype.addIndices = function(vi, ti, ni){
   }
 }
 
+/**
+ * Making sure the index are positive and 0 based
+ * @param  {[type]} vLookupSize [description]
+ * @param  {[type]} tLookupSize [description]
+ * @param  {[type]} nLookupSize [description]
+ */
 ObjFace.prototype.correction = function(vLookupSize, tLookupSize, nLookupSize){
   var i;
   for(i=0; i<this.vi.length; ++i){
@@ -43,6 +55,7 @@ ObjFace.prototype.correction = function(vLookupSize, tLookupSize, nLookupSize){
 }
 
 ObjFace.prototype.calculateFaceNormal = function(vLookup){
+  // cross product and normalization to get the face's normal
   var m = vec3.sub(vec3.create(), vLookup[this.vi[1]], vLookup[this.vi[0]]);
   var n = vec3.sub(vec3.create(), vLookup[this.vi[2]], vLookup[this.vi[0]]);
   vec3.cross(this.normal, m, n);
@@ -50,15 +63,24 @@ ObjFace.prototype.calculateFaceNormal = function(vLookup){
 }
 
 ObjFace.prototype.calculateSmoothNormal = function(vLookup, nLookup){
+  // generate the face normal
   this.calculateFaceNormal(vLookup)
 
-  // accumulate the normals for every vertices on the face.
-  for(var i=0; i<this.vi.length; ++i){
-    var vertexNormal = nLookup[this.vi[i]];
+  // Smooth normal only happens on the vertex shared by faces.
+  // This means that one vertex has only ONE normal, therefore, the index of normal
+  // can be set as the same as the index of vertex.
+  this.ni = this.vi;
+  // By scanning all the normal indices of this face, accumulate the normal for every vertex.
+  for(var i=0; i<this.ni.length; ++i){
+    // Add the face's normal to the face's vertex normal, so we can eventually normalize it to
+    // get the smoothed normal of the vertex.
+    //
+    // Note that we are directly updating nLookup 'library' data.
+    var vertexNormal = nLookup[this.ni[i]];
     if(vertexNormal)
-      vec3.add(nLookup[this.vi[i]], vertexNormal, this.normal);
+      vec3.add(vertexNormal, vertexNormal, this.normal);
     else
-      nLookup[this.vi[i]] = vec3.clone(this.normal);
+      nLookup[this.ni[i]] = vec3.clone(this.normal);
   }
 }
 
@@ -92,21 +114,30 @@ p.onload = function(e){
   // for loop index
   var i,j,k,len;
 
-  // vertex, texture coordinates, normals and faces
+  // vertex, texture coordinates, normals and faces. Contains flat coordinate values, float(Number).
+  // Will be directly used by OpenGL to setup data buffer.
   this.vertices = new Array();
   this.texCoords = new Array();
   this.normals = new Array();
-  // indices
-  this.indices = new Array();
 
-  var faces = new Array();
-
-  // temporary look up array
+  // Contains Flat32Array data.
+  // Consider the vertex, texture coordinate and normal data definitions in obj files as a 'library'.
+  // In other words, these look up array contains actual data. The face definition only contains index which
+  // reference to the look up array, the actual data.
+  //
+  // In some cases, for example, the normals might be missing in the obj file. We just need to generate(use face's normal, cross product) correct
+  // normal for every vertex, and then make sure the face's ni(normal index) is pointed to the corresponding generate normal.
   var vLookup = new Array();
   var tLookup = new Array();
   var nLookup = new Array();
 
-  // texture coordinate component size.
+  // Keeping track the face definition in the obj file.
+  // Only 3 vertex(3 texture coordinate indices, 3 normal indices) indices stored, that is a triangle.
+  // It contains face's vertex, texture coordinate and normal **index** points to the
+  // corresponding 'library': XLookup array.
+  var faces = new Array();
+
+  // texture coordinate component size. Some obj file has different component size
   this.texCoordComponentSize = 2;
 
   // temp element for vertex, texture coordinates and normal.
@@ -116,10 +147,11 @@ p.onload = function(e){
   for(var i=0; i<len; ++i){
     var line = lines[i];
 
-    // empty line and comments
+    // ignore empty line and comments
     if(line.trim() == '' || line.charAt(0) == '#')
       continue;
 
+    // extract the data from obj file
     switch(line.substr(0, 2)){
       case 'v ':
         tokens = line.substr(1).trim().split(' ');
@@ -147,13 +179,14 @@ p.onload = function(e){
         nLookup.push(element);
         break;
       case 'f ':
+        // We need triangle face, it is easier to handle.
+        // If obj file has 4 vertices, break them into 2 triangle faces.
         var vi = new Array();
         var ti = new Array();
         var ni = new Array();
         tokens = line.substr(1).trim().split(' ');
         for(j=0; j<tokens.length; ++j){
           parts = tokens[j].split('/');
-
           vi.push(parseInt(parts[0]));
           ti.push(parseInt(parts[1]));
           ni.push(parseInt(parts[2]));
@@ -176,37 +209,46 @@ p.onload = function(e){
     }
   }
 
+  // obj file's index can be negative and they are 1 based.
+  // Correct the face index definition, making sure they are positive and 0 based.
   len = faces.length;
   for(i=0; i<len; ++i){
     faces[i].correction(vLookup.length, tLookup.length, nLookup.length);
   }
 
-  // if no normals definition. Generate one.
+  // if no normals definition in obj file. Auto generate them using face's normal(smooth process can be also performed)
   if(nLookup.length === 0){
     if(this.flatShading){
+      // flat shading. Using face's normal for every corresponding vertex.
+      // First we generate face normal for every faces, and push them into the 'library', nLookup.
+      // Then scan face's ni(normal index array), points them to the current normal data from nLookup.
       for(i=0; i<len; ++i){
         var face = faces[i];
         face.calculateFaceNormal(vLookup);
         nLookup.push(face.normal);
 
+        // Make the face's normal index points to the current face normal in the nLookup library array
         for(j=0; j<face.vi.length; ++j){
           face.ni[j] = nLookup.length-1;
         }
       }
     }
     else{
+      // We update the 'library' nLookup by accumulating the adjacent faces' normal.
+      // The face's ni is empty because no definition is given in obj file, also needs to be updated.(Detail refers to the method)
       for(i=0; i<len; ++i){
         faces[i].calculateSmoothNormal(vLookup, nLookup);
-        faces[i].ni = faces[i].vi;
       }
-
+      // Once all the faces' normal are generated, normalize them to get the smooth averaged normal
       for(i=0; i<nLookup.length; ++i){
+        // FIXME: some nLookup entry might be undefined, I guess it is the obj data file's bug
         if(nLookup[i])
           vec3.normalize(nLookup[i], nLookup[i]);
       }
     }
   }
 
+  // generate the vertices, texture coordinates and normals data properly for OpenGL.
   for(i=0; i<len; ++i){
     var face = faces[i];
 
@@ -242,7 +284,6 @@ p.onload = function(e){
   console.log('texCoords: ' + this.texCoords.length);
   console.log('normals: ' + this.normals.length);
   console.log('faces: ' + faces.length);
-  console.log('indices: ' + this.indices.length);
 
   console.timeEnd('split');
   this.callback();
