@@ -84,6 +84,16 @@ ObjFace.prototype.calculateSmoothNormal = function(vLookup, nLookup){
   }
 }
 
+function ObjMesh(){
+  this.faces = new Array();
+  this.usemtl = null;
+
+  this.vertices = new Array();
+  this.texCoords = new Array();
+  this.normals = new Array();
+
+  this.startIndex = 0;
+}
 
 
 function ObjLoader(flatShading, useIndex){
@@ -92,31 +102,26 @@ function ObjLoader(flatShading, useIndex){
   else
     this.flatShading = false;
 
-  if(useIndex){
-    this.useIndex = useIndex;
-    if(this.flatShading && this.useIndex){
-      this.useIndex = false;
-      console.warn('Cannot use flat shading and index element at the same time. Index usage will be turned off');
-    }
-  }
-  else
-    this.useIndex = false;
-
-  console.log(this.flatShading);
+  this.mtllib = null;
 }
 var p = ObjLoader.prototype;
 
-p.load = function(path, callback){
+p.load = function(baseURI, file, callback){
   this.callback = callback;
+  this._baseURI = baseURI;
+
+  console.log('loading: ' + this._baseURI + file);
 
   var xhr = new XMLHttpRequest();
-  xhr.open('GET', path, true);
+  xhr.open('GET', this._baseURI+file, true);
   xhr.onload = bind(this, this.onload);
   xhr.send();
 }
 
 p.onload = function(e){
-  console.time('split');
+  console.log('parsing obj file...');
+
+  console.time('parsing obj complete');
 
   var lines = e.target.responseText.split('\n');
 
@@ -163,6 +168,10 @@ p.onload = function(e){
 
   // temp element for vertex, texture coordinates and normal.
   var element;
+
+  // material changes will generate meshes
+  this.meshes = [];
+
 
   len = lines.length;
   for(var i=0; i<len; ++i){
@@ -219,13 +228,31 @@ p.onload = function(e){
         face.addIndices(vi[2], ti[2], ni[2]);
         faces.push(face);
 
+        if(currentMesh)
+            currentMesh.faces.push(face);
+
         if(vi.length === 4){
           face = new ObjFace();
           face.addIndices(vi[2], ti[2], ni[2]);
           face.addIndices(vi[3], ti[3], ni[3]);
           face.addIndices(vi[0], ti[0], ni[0]);
           faces.push(face);
+
+          if(currentMesh)
+            currentMesh.faces.push(face);
         }
+        break;
+      // usemtl
+      case 'us':
+        currentMesh = new ObjMesh();
+        this.meshes.push(currentMesh);
+        currentMesh.usemtl = line.split('usemtl')[1].trim();
+        currentMesh.faces = new Array();
+        currentMesh.startIndex = faces.length*3;
+        break;
+      // mtllib
+      case 'mt':
+        this.mtllib = line.split('mtllib')[1].trim();
         break;
     }
   }
@@ -269,61 +296,63 @@ p.onload = function(e){
     }
   }
 
-  if(this.useIndex){
-    for(i=0; i<len; ++i){
-      var face = faces[i];
+  // generate the vertices, texture coordinates and normals data properly for OpenGL.
+  for(i=0; i<len; ++i){
+    var face = faces[i];
 
-      for(j=0; j<face.vi.length; ++j){
-        element = vLookup[face.vi[j]];
-        this.vertices[face.vi[j]*3] = element[0];
-        this.vertices[face.vi[j]*3+1] = element[1];
-        this.vertices[face.vi[j]*3+2] = element[2];
-
-        this.indices.push(face.vi[j]);
+    // vertices
+    for(j=0; j<face.vi.length; ++j){
+      element = vLookup[face.vi[j]];
+      for(k=0; k<element.length; ++k){
+        this.vertices.push(element[k]);
       }
+    }
 
-      for(j=0; j<face.ti.length; ++j){
-        element = tLookup[face.ti[j]];
-        this.texCoords[face.vi[j]*3] = element[0];
-        this.texCoords[face.vi[j]*3+1] = element[1];
-        if(face.ti[j].length === 3)
-          this.texCoords[face.vi[j]*3+2] = element[2];
+    // texture coordinate
+    for(j=0; j<face.ti.length; ++j){
+      element = tLookup[face.ti[j]];
+      for(k=0; k<element.length; ++k){
+        this.texCoords.push(element[k]);
       }
+    }
 
-      for(j=0; j<face.ni.length; ++j){
-        element = nLookup[face.ni[j]];
-        this.normals[face.vi[j]*3] = element[0];
-        this.normals[face.vi[j]*3+1] = element[1];
-        this.normals[face.vi[j]*3+2] = element[2];
+    // normals
+    for(j=0; j<face.ni.length; ++j){
+      element = nLookup[face.ni[j]];
+      for(k=0; k<element.length; ++k){
+        this.normals.push(element[k]);
       }
     }
   }
-  else{
-    // generate the vertices, texture coordinates and normals data properly for OpenGL.
-    for(i=0; i<len; ++i){
-      var face = faces[i];
+
+
+  // meshes
+  for(i=0; i<this.meshes.length; ++i){
+    var mesh = this.meshes[i];
+    for(j=0; j<mesh.faces.length; ++j){
+      var face = faces[j];
 
       // vertices
-      for(j=0; j<face.vi.length; ++j){
-        element = vLookup[face.vi[j]];
-        for(k=0; k<element.length; ++k){
-          this.vertices.push(element[k]);
+      for(k=0; k<face.vi.length; ++k){
+        element = vLookup[face.vi[k]];
+        for(l=0; l<element.length; ++l){
+          mesh.vertices.push(element[l]);
         }
       }
 
       // texture coordinate
-      for(j=0; j<face.ti.length; ++j){
-        element = tLookup[face.ti[j]];
-        for(k=0; k<element.length; ++k){
-          this.texCoords.push(element[k]);
+      for(k=0; k<face.ti.length; ++k){
+        element = tLookup[face.ti[k]];
+        for(l=0; l<element.length; ++l){
+          mesh.texCoords.push(element[l]);
         }
       }
 
       // normals
-      for(j=0; j<face.ni.length; ++j){
-        element = nLookup[face.ni[j]];
-        for(k=0; k<element.length; ++k){
-          this.normals.push(element[k]);
+      for(k=0; k<face.ni.length; ++k){
+        element = nLookup[face.ni[k]];
+        for(var l=0; l<element.length; ++l){
+          mesh.normals.push(element[l]);
         }
       }
     }
@@ -337,8 +366,14 @@ p.onload = function(e){
   console.log('texCoords: ' + this.texCoords.length);
   console.log('normals: ' + this.normals.length);
   console.log('faces: ' + faces.length);
+  console.log('meshes: ' + this.meshes.length);
   console.log('indices: ' + this.indices.length);
 
-  console.timeEnd('split');
-  this.callback();
+  // console.log(this.meshes);
+
+  console.timeEnd('parsing obj complete');
+
+  // load the materials
+  this.mtlLoader = new MtlLoader();
+  this.mtlLoader.load(this._baseURI + this.mtllib, bind(this, this.callback));
 }
