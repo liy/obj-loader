@@ -86,11 +86,22 @@ ObjFace.prototype.calculateSmoothNormal = function(vLookup, nLookup){
 
 
 
-function ObjLoader(flatShading){
+function ObjLoader(flatShading, useIndex){
   if(flatShading)
     this.flatShading = flatShading;
   else
     this.flatShading = false;
+
+  if(useIndex){
+    this.useIndex = useIndex;
+    if(this.flatShading && this.useIndex){
+      this.useIndex = false;
+      console.warn('Cannot use flat shading and index element at the same time. Index usage will be turned off');
+    }
+  }
+  else
+    this.useIndex = false;
+
   console.log(this.flatShading);
 }
 var p = ObjLoader.prototype;
@@ -119,6 +130,16 @@ p.onload = function(e){
   this.vertices = new Array();
   this.texCoords = new Array();
   this.normals = new Array();
+
+  // index array. Points to the library data.
+  // Note that only in smooth shading mode, the index element could be enabled.
+  // Because in smooth shading mode, one vertex only have exact ONE normal; however in flat shading mode,
+  // a vertex shared by different faces will need multiple normals, which cannot be expressed by single index.
+  // e.g.,
+  // a vertex 'V' in vertex array is expressed by index location: 'I'.
+  // In the normal array there is an entry 'N' pointed by 'I'. In flat shading mode if the index is shared by multiple faces, normal should be different
+  // But you cannot locate the different normals use the same index 'I'.
+  this.indices = new Array();
 
   // Contains Flat32Array data.
   // Consider the vertex, texture coordinate and normal data definitions in obj files as a 'library'.
@@ -248,34 +269,66 @@ p.onload = function(e){
     }
   }
 
-  // generate the vertices, texture coordinates and normals data properly for OpenGL.
-  for(i=0; i<len; ++i){
-    var face = faces[i];
+  if(this.useIndex){
+    for(i=0; i<len; ++i){
+      var face = faces[i];
 
-    // vertices
-    for(j=0; j<face.vi.length; ++j){
-      element = vLookup[face.vi[j]];
-      for(k=0; k<element.length; ++k){
-        this.vertices.push(element[k]);
+      for(j=0; j<face.vi.length; ++j){
+        element = vLookup[face.vi[j]];
+        this.vertices[face.vi[j]*3] = element[0];
+        this.vertices[face.vi[j]*3+1] = element[1];
+        this.vertices[face.vi[j]*3+2] = element[2];
+
+        this.indices.push(face.vi[j]);
       }
-    }
 
-    // texture coordinate
-    for(j=0; j<face.ti.length; ++j){
-      element = tLookup[face.ti[j]];
-      for(k=0; k<element.length; ++k){
-        this.texCoords.push(element[k]);
+      for(j=0; j<face.ti.length; ++j){
+        element = tLookup[face.ti[j]];
+        this.texCoords[face.vi[j]*3] = element[0];
+        this.texCoords[face.vi[j]*3+1] = element[1];
+        if(face.ti[j].length === 3)
+          this.texCoords[face.vi[j]*3+2] = element[2];
       }
-    }
 
-    // normals
-    for(j=0; j<face.ni.length; ++j){
-      element = nLookup[face.ni[j]];
-      for(k=0; k<element.length; ++k){
-        this.normals.push(element[k]);
+      for(j=0; j<face.ni.length; ++j){
+        element = nLookup[face.ni[j]];
+        this.normals[face.vi[j]*3] = element[0];
+        this.normals[face.vi[j]*3+1] = element[1];
+        this.normals[face.vi[j]*3+2] = element[2];
       }
     }
   }
+  else{
+    // generate the vertices, texture coordinates and normals data properly for OpenGL.
+    for(i=0; i<len; ++i){
+      var face = faces[i];
+
+      // vertices
+      for(j=0; j<face.vi.length; ++j){
+        element = vLookup[face.vi[j]];
+        for(k=0; k<element.length; ++k){
+          this.vertices.push(element[k]);
+        }
+      }
+
+      // texture coordinate
+      for(j=0; j<face.ti.length; ++j){
+        element = tLookup[face.ti[j]];
+        for(k=0; k<element.length; ++k){
+          this.texCoords.push(element[k]);
+        }
+      }
+
+      // normals
+      for(j=0; j<face.ni.length; ++j){
+        element = nLookup[face.ni[j]];
+        for(k=0; k<element.length; ++k){
+          this.normals.push(element[k]);
+        }
+      }
+    }
+  }
+
 
   console.log('vLookup: ' + vLookup.length);
   console.log('tLookup: ' + tLookup.length);
@@ -284,6 +337,7 @@ p.onload = function(e){
   console.log('texCoords: ' + this.texCoords.length);
   console.log('normals: ' + this.normals.length);
   console.log('faces: ' + faces.length);
+  console.log('indices: ' + this.indices.length);
 
   console.timeEnd('split');
   this.callback();
