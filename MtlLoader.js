@@ -31,7 +31,8 @@ ObjMaterial.prototype.hasTexture = function(){
 }
 
 function MtlLoader(){
-  this.images = null;
+  // contains materials
+  this.materialMap = Object.create(null);
 }
 var p = MtlLoader.prototype;
 
@@ -49,7 +50,6 @@ p.load = function(path, callback){
 p.onload = function(e){
   var lines = e.target.responseText.split('\n');
 
-  this.materialMap = new Object();
   var currentMtl;
 
   var chunks, colour;

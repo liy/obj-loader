@@ -172,6 +172,9 @@ p.onload = function(e){
   // material changes will generate meshes
   this.meshes = [];
 
+  // keep track of current mesh for storing faces data
+  var currentMesh;
+
 
   len = lines.length;
   for(var i=0; i<len; ++i){
@@ -230,6 +233,13 @@ p.onload = function(e){
 
         if(currentMesh)
             currentMesh.faces.push(face);
+        else{
+          // possibly only one mesh, no usemtl defined.
+          currentMesh = new ObjMesh();
+          this.meshes.push(currentMesh);
+          currentMesh.faces = new Array();
+          currentMesh.startIndex = faces.length*3;
+        }
 
         if(vi.length === 4){
           face = new ObjFace();
@@ -375,5 +385,10 @@ p.onload = function(e){
 
   // load the materials
   this.mtlLoader = new MtlLoader();
-  this.mtlLoader.load(this._baseURI + this.mtllib, bind(this, this.callback));
+  if(this.mtllib){
+    this.mtlLoader.load(this._baseURI + this.mtllib, bind(this, this.callback));
+  }
+  else{
+    this.callback();
+  }
 }
