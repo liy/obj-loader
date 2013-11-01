@@ -180,6 +180,8 @@ p.onload = function(e){
   // material changes will generate meshes
   this.meshes = [];
 
+  // keeping track of current mesh
+  var currentMesh = null;
 
   len = lines.length;
   for(var i=0; i<len; ++i){
@@ -217,6 +219,14 @@ p.onload = function(e){
         nLookup.push(element);
         break;
       case 'f ':
+         // has no mesh definition. Create one by default
+        if(!currentMesh){
+          currentMesh = new ObjMesh();
+          this.meshes.push(currentMesh);
+          currentMesh.faces = new Array();
+          currentMesh.startIndex = faces.length*3;
+        }
+
         // We need triangle face, it is easier to handle.
         // If obj file has 4 vertices, break them into 2 triangle faces.
         var vi = new Array();
@@ -235,9 +245,8 @@ p.onload = function(e){
         face.addIndices(vi[1], ti[1], ni[1]);
         face.addIndices(vi[2], ti[2], ni[2]);
         faces.push(face);
-
-        if(currentMesh)
-            currentMesh.faces.push(face);
+        
+        currentMesh.faces.push(face);
 
         if(vi.length === 4){
           face = new ObjFace();
@@ -246,8 +255,7 @@ p.onload = function(e){
           face.addIndices(vi[0], ti[0], ni[0]);
           faces.push(face);
 
-          if(currentMesh)
-            currentMesh.faces.push(face);
+          currentMesh.faces.push(face);
         }
         break;
       // usemtl
