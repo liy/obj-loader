@@ -103,8 +103,16 @@ function ObjLoader(flatShading, useIndex){
     this.flatShading = false;
 
   this.mtllib = null;
+  this.mtlLoader = new MtlLoader();
 }
 var p = ObjLoader.prototype;
+
+p.clear = function(){
+  this.mtllib = null;
+  this.mtlLoader.clear();
+
+  this.meshes = [];
+}
 
 p.load = function(baseURI, file, callback){
   this.callback = callback;
@@ -374,6 +382,5 @@ p.onload = function(e){
   console.timeEnd('parsing obj complete');
 
   // load the materials
-  this.mtlLoader = new MtlLoader();
   this.mtlLoader.load(this._baseURI + this.mtllib, bind(this, this.callback));
 }
