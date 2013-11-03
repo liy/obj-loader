@@ -103,8 +103,16 @@ function ObjLoader(flatShading, useIndex){
     this.flatShading = false;
 
   this.mtllib = null;
+  // material changes will generate meshes
+  this.meshes = [];
 }
 var p = ObjLoader.prototype;
+
+p.clear = function(){
+  this.meshes.length = 0;
+  this.mtllib = null;
+  currentMesh = null;
+}
 
 p.load = function(baseURI, file, callback){
   this.callback = callback;
@@ -168,9 +176,6 @@ p.onload = function(e){
 
   // temp element for vertex, texture coordinates and normal.
   var element;
-
-  // material changes will generate meshes
-  this.meshes = [];
 
   // keep track of current mesh for storing faces data
   var currentMesh;
@@ -266,6 +271,8 @@ p.onload = function(e){
         break;
     }
   }
+
+  console.log('parse complete');
 
   // obj file's index can be negative and they are 1 based.
   // Correct the face index definition, making sure they are positive and 0 based.
