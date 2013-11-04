@@ -169,7 +169,7 @@ p.onload = function(e){
   // Only 3 vertex(3 texture coordinate indices, 3 normal indices) indices stored, that is a triangle.
   // It contains face's vertex, texture coordinate and normal **index** points to the
   // corresponding 'library': XLookup array.
-  var faces = new Array();
+  this.faces = new Array();
 
   // texture coordinate component size. Some obj file has different component size
   this.texCoordComponentSize = 2;
@@ -234,7 +234,7 @@ p.onload = function(e){
         face.addIndices(vi[0], ti[0], ni[0]);
         face.addIndices(vi[1], ti[1], ni[1]);
         face.addIndices(vi[2], ti[2], ni[2]);
-        faces.push(face);
+        this.faces.push(face);
 
         if(currentMesh)
             currentMesh.faces.push(face);
@@ -243,7 +243,7 @@ p.onload = function(e){
           currentMesh = new ObjMesh();
           this.meshes.push(currentMesh);
           currentMesh.faces = new Array();
-          currentMesh.startIndex = faces.length*3;
+          currentMesh.startIndex = this.faces.length*3;
         }
 
         if(vi.length === 4){
@@ -251,7 +251,7 @@ p.onload = function(e){
           face.addIndices(vi[2], ti[2], ni[2]);
           face.addIndices(vi[3], ti[3], ni[3]);
           face.addIndices(vi[0], ti[0], ni[0]);
-          faces.push(face);
+          this.faces.push(face);
 
           if(currentMesh)
             currentMesh.faces.push(face);
@@ -263,7 +263,7 @@ p.onload = function(e){
         this.meshes.push(currentMesh);
         currentMesh.usemtl = line.split('usemtl')[1].trim();
         currentMesh.faces = new Array();
-        currentMesh.startIndex = faces.length*3;
+        currentMesh.startIndex = this.faces.length*3;
         break;
       // mtllib
       case 'mt':
@@ -276,9 +276,9 @@ p.onload = function(e){
 
   // obj file's index can be negative and they are 1 based.
   // Correct the face index definition, making sure they are positive and 0 based.
-  len = faces.length;
+  len = this.faces.length;
   for(i=0; i<len; ++i){
-    faces[i].correction(vLookup.length, tLookup.length, nLookup.length);
+    this.faces[i].correction(vLookup.length, tLookup.length, nLookup.length);
   }
 
   // if no normals definition in obj file. Auto generate them using face's normal(smooth process can be also performed)
@@ -288,7 +288,7 @@ p.onload = function(e){
       // First we generate face normal for every faces, and push them into the 'library', nLookup.
       // Then scan face's ni(normal index array), points them to the current normal data from nLookup.
       for(i=0; i<len; ++i){
-        var face = faces[i];
+        var face = this.faces[i];
         face.calculateFaceNormal(vLookup);
         nLookup.push(face.normal);
 
@@ -302,7 +302,7 @@ p.onload = function(e){
       // We update the 'library' nLookup by accumulating the adjacent faces' normal.
       // The face's ni is empty because no definition is given in obj file, also needs to be updated.(Detail refers to the method)
       for(i=0; i<len; ++i){
-        faces[i].calculateSmoothNormal(vLookup, nLookup);
+        this.faces[i].calculateSmoothNormal(vLookup, nLookup);
       }
       // Once all the faces' normal are generated, normalize them to get the smooth averaged normal
       for(i=0; i<nLookup.length; ++i){
@@ -315,7 +315,7 @@ p.onload = function(e){
 
   // generate the vertices, texture coordinates and normals data properly for OpenGL.
   for(i=0; i<len; ++i){
-    var face = faces[i];
+    var face = this.faces[i];
 
     // vertices
     for(j=0; j<face.vi.length; ++j){
@@ -347,7 +347,7 @@ p.onload = function(e){
   for(i=0; i<this.meshes.length; ++i){
     var mesh = this.meshes[i];
     for(j=0; j<mesh.faces.length; ++j){
-      var face = faces[j];
+      var face = this.faces[j];
 
       // vertices
       for(k=0; k<face.vi.length; ++k){
@@ -382,7 +382,7 @@ p.onload = function(e){
   console.log('vertices: ' + this.vertices.length);
   console.log('texCoords: ' + this.texCoords.length);
   console.log('normals: ' + this.normals.length);
-  console.log('faces: ' + faces.length);
+  console.log('faces: ' + this.faces.length);
   console.log('meshes: ' + this.meshes.length);
   console.log('indices: ' + this.indices.length);
 
@@ -397,5 +397,19 @@ p.onload = function(e){
   }
   else{
     this.callback();
+  }
+}
+
+p.getTangents = function(){
+  var len = this.faces;
+  for(i=0; i<len; ++i){
+    var face = faces[i];
+    face.calculateFaceNormal(vLookup);
+    nLookup.push(face.normal);
+
+    // Make the face's normal index points to the current face normal in the nLookup library array
+    for(j=0; j<face.vi.length; ++j){
+      face.ni[j] = nLookup.length-1;
+    }
   }
 }
