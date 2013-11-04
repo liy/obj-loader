@@ -4,6 +4,7 @@ function ObjFace(){
   this.ni = new Array();
 
   this.normal = vec3.create();
+  this.tangent = vec3.create();
 }
 
 /**
@@ -84,13 +85,37 @@ ObjFace.prototype.calculateSmoothNormal = function(vLookup, nLookup){
   }
 }
 
+ObjFace.prototype.calculateTangent = function(vLookup, tLookup, tangentLookup){
+  var e1 = vec3.sub(vec3.create(), vLookup[this.vi[1]], vLookup[this.vi[0]]);
+  var e2 = vec3.sub(vec3.create(), vLookup[this.vi[2]], vLookup[this.vi[0]]);
+
+  // get the 2 eges' delta v coordinate of the texture coordinate
+  var dv2 = tLookup[this.ti[2]][1] - tLookup[this.ti[0]][1];
+  var dv1 = tLookup[this.ti[1]][1] - tLookup[this.ti[0]][1];
+
+  // calculate tangent of the face
+  var t = vec3.scale(vec3.create(), e1, dv2);
+  vec3.add(t, t, vec3.scale(vec3.create(), e2, -dv1));
+  // normalize now! Since we are omitting the constant term: 1/(du1*dv2 - du2*dv1)
+  vec3.normalize(t, t);
+  // set tangent for all vertices of the face
+  for(var i=0; i<3; ++i){
+    var tangent = tangentLookup[this.vi[i]];
+    // needs normalize all the tangents again, when all the face's tangent calculation completed.
+    if(tangent)
+      vec3.add(tangent, tangent, t);
+    else
+      tangentLookup[this.vi[i]] = t;
+  }
+}
+
 function ObjMesh(){
-  this.faces = new Array();
   this.usemtl = null;
 
   this.vertices = new Array();
   this.texCoords = new Array();
   this.normals = new Array();
+  this.tangents = new Array();
 
   this.startIndex = 0;
 }
@@ -104,14 +129,16 @@ function ObjLoader(flatShading, useIndex){
 
   this.mtllib = null;
   this.mtlLoader = new MtlLoader();
+  // material changes will generate meshes
+  this.meshes = [];
 }
 var p = ObjLoader.prototype;
 
 p.clear = function(){
-  this.mtllib = null;
   this.mtlLoader.clear();
-
-  this.meshes = [];
+  this.meshes.length = 0;
+  this.mtllib = null;
+  currentMesh = null;
 }
 
 p.load = function(baseURI, file, callback){
@@ -154,6 +181,9 @@ p.onload = function(e){
   // But you cannot locate the different normals use the same index 'I'.
   this.indices = new Array();
 
+  // tangents
+  this.tangents = new Array();
+
   // Contains Flat32Array data.
   // Consider the vertex, texture coordinate and normal data definitions in obj files as a 'library'.
   // In other words, these look up array contains actual data. The face definition only contains index which
@@ -164,6 +194,9 @@ p.onload = function(e){
   var vLookup = new Array();
   var tLookup = new Array();
   var nLookup = new Array();
+
+  // tangent lookup, for bump map
+  var tangentLookup = new Array();
 
   // Keeping track the face definition in the obj file.
   // Only 3 vertex(3 texture coordinate indices, 3 normal indices) indices stored, that is a triangle.
@@ -219,13 +252,6 @@ p.onload = function(e){
         nLookup.push(element);
         break;
       case 'f ':
-         // has no mesh definition. Create one by default
-        if(!currentMesh){
-          currentMesh = new ObjMesh();
-          this.meshes.push(currentMesh);
-          currentMesh.faces = new Array();
-          currentMesh.startIndex = faces.length*3;
-        }
 
         // We need triangle face, it is easier to handle.
         // If obj file has 4 vertices, break them into 2 triangle faces.
@@ -245,8 +271,16 @@ p.onload = function(e){
         face.addIndices(vi[1], ti[1], ni[1]);
         face.addIndices(vi[2], ti[2], ni[2]);
         faces.push(face);
-        
-        currentMesh.faces.push(face);
+
+        if(currentMesh)
+            currentMesh.faces.push(face);
+        else{
+          // possibly only one mesh, no usemtl defined.
+          currentMesh = new ObjMesh();
+          this.meshes.push(currentMesh);
+          currentMesh.faces = new Array();
+          currentMesh.startIndex = faces.length*3;
+        }
 
         if(vi.length === 4){
           face = new ObjFace();
@@ -254,7 +288,6 @@ p.onload = function(e){
           face.addIndices(vi[3], ti[3], ni[3]);
           face.addIndices(vi[0], ti[0], ni[0]);
           faces.push(face);
-
           currentMesh.faces.push(face);
         }
         break;
@@ -272,6 +305,8 @@ p.onload = function(e){
         break;
     }
   }
+
+  console.log('parse complete');
 
   // obj file's index can be negative and they are 1 based.
   // Correct the face index definition, making sure they are positive and 0 based.
@@ -312,6 +347,17 @@ p.onload = function(e){
     }
   }
 
+  if(tLookup.length !== 0){
+    // calculate tangent
+    for(i=0; i<len; ++i){
+      faces[i].calculateTangent(vLookup, tLookup, tangentLookup);
+    }
+    // normalize all the tangent again
+    for(i=0; i<tangentLookup.length; ++i){
+        vec3.normalize(tangentLookup[i], tangentLookup[i]);
+    }
+  }
+
   // generate the vertices, texture coordinates and normals data properly for OpenGL.
   for(i=0; i<len; ++i){
     var face = faces[i];
@@ -337,6 +383,16 @@ p.onload = function(e){
       element = nLookup[face.ni[j]];
       for(k=0; k<element.length; ++k){
         this.normals.push(element[k]);
+      }
+    }
+
+    // tangents
+    if(tangentLookup.length !== 0){
+      for(j=0; j<face.vi.length; ++j){
+        element = tangentLookup[face.vi[j]];
+        for(var k=0; k<element.length; ++k){
+          this.tangents.push(element[k]);
+        }
       }
     }
   }
@@ -371,24 +427,38 @@ p.onload = function(e){
           mesh.normals.push(element[l]);
         }
       }
+
+      // tangents
+      if(tangentLookup.length !== 0){
+        for(k=0; k<face.vi.length; ++k){
+          element = tangentLookup[face.vi[k]];
+          for(var l=0; l<element.length; ++l){
+            mesh.tangents.push(element[l]);
+          }
+        }
+      }
     }
   }
-
 
   console.log('vLookup: ' + vLookup.length);
   console.log('tLookup: ' + tLookup.length);
   console.log('nLookup: ' + nLookup.length);
+  console.log('tangentLookup: ' + tangentLookup.length);
   console.log('vertices: ' + this.vertices.length);
   console.log('texCoords: ' + this.texCoords.length);
   console.log('normals: ' + this.normals.length);
+  console.log('tangents: ' + this.tangents.length);
   console.log('faces: ' + faces.length);
   console.log('meshes: ' + this.meshes.length);
   console.log('indices: ' + this.indices.length);
 
-  // console.log(this.meshes);
-
   console.timeEnd('parsing obj complete');
 
   // load the materials
-  this.mtlLoader.load(this._baseURI + this.mtllib, bind(this, this.callback));
+  if(this.mtllib){
+    this.mtlLoader.load(this._baseURI + this.mtllib, bind(this, this.callback));
+  }
+  else{
+    this.callback();
+  }
 }

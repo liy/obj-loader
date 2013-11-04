@@ -31,6 +31,7 @@ ObjMaterial.prototype.hasTexture = function(){
 }
 
 function MtlLoader(){
+  // contains materials
   this.materialMap = Object.create(null);
 }
 var p = MtlLoader.prototype;
