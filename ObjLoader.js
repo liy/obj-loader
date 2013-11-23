@@ -89,15 +89,20 @@ ObjFace.prototype.calculateTangent = function(vLookup, tLookup, tangentLookup){
   var e1 = vec3.sub(vec3.create(), vLookup[this.vi[1]], vLookup[this.vi[0]]);
   var e2 = vec3.sub(vec3.create(), vLookup[this.vi[2]], vLookup[this.vi[0]]);
 
-  // get the 2 eges' delta v coordinate of the texture coordinate
   var dv2 = tLookup[this.ti[2]][1] - tLookup[this.ti[0]][1];
   var dv1 = tLookup[this.ti[1]][1] - tLookup[this.ti[0]][1];
+
+  var du2 = tLookup[this.ti[2]][0] - tLookup[this.ti[0]][0];
+  var du1 = tLookup[this.ti[1]][0] - tLookup[this.ti[0]][0];
 
   // calculate tangent of the face
   var t = vec3.scale(vec3.create(), e1, dv2);
   vec3.add(t, t, vec3.scale(vec3.create(), e2, -dv1));
-  // normalize now! Since we are omitting the constant term: 1/(du1*dv2 - du2*dv1)
-  vec3.normalize(t, t);
+  // determinant for calculate inverse of the tangent space to model space matrix, in order to get
+  // model space to tangent space matrix
+  var det = du1*dv2 - du2*dv1;
+  vec3.scale(t, t, 1.0/det);
+
   // set tangent for all vertices of the face
   for(var i=0; i<3; ++i){
     var tangent = tangentLookup[this.vi[i]];
@@ -105,7 +110,7 @@ ObjFace.prototype.calculateTangent = function(vLookup, tLookup, tangentLookup){
     if(tangent)
       vec3.add(tangent, tangent, t);
     else
-      tangentLookup[this.vi[i]] = t;
+      tangentLookup[this.vi[i]] = vec3.clone(t);
   }
 }
 
